@@ -1,0 +1,14 @@
+# Python
+.venv/
+__pycache__/
+*.pyc
+
+# Playwright 持久化 profile（含登录态，勿提交）
+.profile/
+
+# 下载产物
+downloads/
+downloads_batch/
+*.part
+*.mp4
+*.jpg
