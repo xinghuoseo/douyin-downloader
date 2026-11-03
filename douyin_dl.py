@@ -24,6 +24,8 @@ import time
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from pathlib import Path
 
+__version__ = "2.0.0"  # 2.0.0: 修复 core_dep(UA 与浏览器版本一致性); 1.x: 初始版(养环境说法, 已证伪)
+
 import requests
 from playwright.sync_api import TimeoutError as PWTimeout
 from playwright.sync_api import sync_playwright

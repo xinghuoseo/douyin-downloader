@@ -1,5 +1,6 @@
 ---
 name: douyin-download
+version: "2.0.0"
 description: 抖音无水印视频下载, 浏览器拦截签名取直链, 已适配无root Linux。
 ---
 
