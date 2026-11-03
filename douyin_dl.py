@@ -31,6 +31,16 @@ from playwright.sync_api import sync_playwright
 BASE_DIR = Path(__file__).resolve().parent
 PROFILE_DIR = BASE_DIR / ".profile"
 
+# Linux 无root环境: chromium 依赖库解包在 ~/.hermes/tools/chromium-libs, 启动前注入 LD_LIBRARY_PATH
+_CHROMIUM_LIBS = Path.home() / ".hermes" / "tools" / "chromium-libs"
+if _CHROMIUM_LIBS.exists():
+    _lp = f"{_CHROMIUM_LIBS}/usr/lib/x86_64-linux-gnu:{_CHROMIUM_LIBS}/lib/x86_64-linux-gnu"
+    os.environ["LD_LIBRARY_PATH"] = _lp + ":" + os.environ.get("LD_LIBRARY_PATH", "")
+    _fc = _CHROMIUM_LIBS / "etc" / "fonts"
+    if (_fc / "fonts.conf").exists():
+        os.environ["FONTCONFIG_PATH"] = str(_fc)
+        os.environ["FONTCONFIG_FILE"] = str(_fc / "fonts.conf")
+
 
 def chrome_ua() -> str:
     """按本机 Chrome 版本拼 UA。
@@ -39,8 +49,12 @@ def chrome_ua() -> str:
     必须覆写成普通 Chrome UA，否则 detail / aweme/post 全拿不到数据。
     """
     ver = ""
+    if sys.platform != "win32":
+        # UA 版本必须与实际浏览器二进制一致(检测: playwright chromium 版本), 否则 TLS/UA 指纹不匹配 → core_dep 过滤
+        return ("Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 "
+                "(KHTML, like Gecko) Chrome/156.0.0.0 Safari/537.36")
     try:
-        import winreg
+        import winreg  # noqa: F401  仅Windows可用
 
         with winreg.OpenKey(winreg.HKEY_CURRENT_USER, r"Software\Google\Chrome\BLBeacon") as k:
             ver = str(winreg.QueryValueEx(k, "version")[0])
@@ -271,16 +285,23 @@ def fetch_user_items(page, sec_uid: str, limit: int, timeout: float = 90.0) -> l
 
 
 def launch(p, headless: bool):
-    return p.chromium.launch_persistent_context(
-        str(PROFILE_DIR),
-        channel="chrome",
+    """Windows 优先用本机 Chrome(channel=chrome, TLS指纹最真); Linux 用 playwright 自带 chromium。
+    Linux headless 用 --headless=new(真渲染管线, 指纹比旧 headless 真实), 风控通过率更高。"""
+    import platform as _pf
+    args = ["--disable-blink-features=AutomationControlled", "--mute-audio"]
+    if headless and _pf.system() != "Windows":
+        args = args + ["--headless=new"]
+        headless = False  # 已用 flag 声明无头, 不用 playwright 的旧 headless(HEADLESSChrome UA)
+    kwargs = dict(
         headless=headless,
         user_agent=DESKTOP_UA,  # 去掉 HeadlessChrome，否则接口全返回空包
         viewport={"width": 1280, "height": 900},
         locale="zh-CN",
-        args=["--disable-blink-features=AutomationControlled", "--mute-audio"],
+        args=args,
     )
-
+    if _pf.system() == "Windows":
+        kwargs["channel"] = "chrome"
+    return p.chromium.launch_persistent_context(str(PROFILE_DIR), **kwargs)
 
 def do_login(wait: float = 180.0) -> None:
     """开一个可见浏览器扫码登录，会话存进 .profile，之后翻页不再被登录墙挡住。"""
@@ -304,7 +325,7 @@ def do_login(wait: float = 180.0) -> None:
 def main(argv: list[str]) -> int:
     ap = argparse.ArgumentParser(description="抖音视频下载（浏览器签名 + 直链下载）")
     ap.add_argument("links", nargs="*", help="分享链接 / video 链接 / 主页链接 / 分享文案")
-    ap.add_argument("--out", default=str(BASE_DIR / "downloads"), help="保存目录")
+    ap.add_argument("--out", default="/workspace/视频下载/抖音", help="保存目录(默认 /workspace/视频下载/抖音)")
     ap.add_argument("--limit", type=int, default=20, help="主页模式最多下多少条，默认 20")
     ap.add_argument("--headful", action="store_true", help="显示浏览器窗口（验证风控时用）")
     ap.add_argument("--login", action="store_true", help="扫码登录一次，解锁主页翻页")
